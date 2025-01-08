@@ -21,7 +21,7 @@ class VOC2012(Dataset):
                 [0, 64, 128])
     IDS=(0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20)
     
-    def __init__(self, path=r'data/VOCtrainval_11-May-2012/VOCdevkit/VOC2012/', cache_size=200, pin_memory=True, train=True):
+    def __init__(self, path=r'./data/VOCdevkit/VOC2012/', cache_size=200, pin_memory=True, train=True):
         self.train = train
         self.pin_memory = pin_memory
         self.img_dir = path + r'JPEGImages/'

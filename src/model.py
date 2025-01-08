@@ -14,7 +14,9 @@ from pathlib import Path
 from PIL import Image
 
 
-class SwinSeg(nn.Module):
+class SwinSegOld(nn.Module):
+
+        
     def __init__(self, n_class):        
         super().__init__()
 
@@ -37,44 +39,17 @@ class SwinSeg(nn.Module):
         
         # equivalent to the layernorm used in swin
         self.norm256 = nn.GroupNorm(1, 256)
-        self.relu = nn.ReLU
+        self.relu = nn.ReLU()
 
-        
         # 256 -> class size
         self.score4 = nn.Conv2d(256, n_class, 1)
         self.score8 = nn.Conv2d(256, n_class, 1)
         self.score16 = nn.Conv2d(256, n_class, 1)
         self.score32 = nn.Conv2d(256, n_class, 1)
         
-        
         # initialize weights with kaiming
-        nn.init.zeros_(self.fm96_proj.weight,)
-        nn.init.zeros_(self.fm192_proj.weight,)
-        nn.init.zeros_(self.fm384_proj.weight,)
-        nn.init.kaiming_uniform_(self.fm768_proj.weight,)
-        nn.init.kaiming_uniform_(self.score32.weight,)
-        nn.init.zeros_(self.smooth4.weight,)
-        nn.init.zeros_(self.smooth8.weight,)
-        nn.init.zeros_(self.smooth16.weight,)
-        nn.init.zeros_(self.score16.weight,)
-        nn.init.zeros_(self.score4.weight,)
-        nn.init.zeros_(self.score8.weight,)
-        
-        self.score16.weight.data[:, :, 0, 0] = 1.0
-        self.score16.bias.data.zero_()
-        self.score8.weight.data[:, :, 0, 0] = 1.0
-        self.score8.bias.data.zero_()
-        self.score4.weight.data[:, :, 0, 0] = 1.0
-        self.score4.bias.data.zero_()
-        
-        self.smooth16.weight.data[:, :, 1, 1] = 1.0
-        self.smooth16.bias.data.zero_()
-        self.smooth8.weight.data[:, :, 1, 1] = 1.0
-        self.smooth8.bias.data.zero_()
-        self.smooth4.weight.data[:, :, 1, 1] = 1.0
-        self.smooth4.bias.data.zero_()
-        
-        
+        self.apply(self._init_weights)
+    
     def forward(self, x, weights=[1.3, 0.5, 0.3, 0.3]):
         '''
         args:
@@ -109,19 +84,19 @@ class SwinSeg(nn.Module):
         ''' feature pyramid network '''
         
         # project to 256 dimensions and normalize
-        fm96 = self.norm256(self.fm96_proj(fm96))
-        fm192 = self.norm256(self.fm192_proj(fm192))
-        fm384 = self.norm256(self.fm384_proj(fm384))
-        fm768 = self.norm256(self.fm768_proj(fm768))
+        fm96 = self.relu(self.norm256(self.fm96_proj(fm96)))
+        fm192 = self.relu(self.norm256(self.fm192_proj(fm192)))
+        fm384 = self.relu(self.norm256(self.fm384_proj(fm384)))
+        fm768 = self.relu(self.norm256(self.fm768_proj(fm768)))
         
-        fuse16 = self.relu(self.norm(self.smooth16(fm384 + F.interpolate(fm768, size=fm384.shape[-2:], mode='bilinear', align_corners=False))))
-        fuse8 = self.relu(self.norm(self.smooth8(fm192 + F.interpolate(fuse16, size=fm192.shape[-2:], mode='bilinear', align_corners=False))))
-        fuse4 = self.relu(self.norm(self.smooth4(fm96 + F.interpolate(fuse8, size=fm96.shape[-2:], mode='bilinear', align_corners=False))))
+        fuse16 = self.relu(self.norm256(self.smooth16(fm384 + F.interpolate(fm768, size=fm384.shape[-2:], mode='bilinear', align_corners=False))))
+        fuse8 = self.relu(self.norm256(self.smooth8(fm192 + F.interpolate(fuse16, size=fm192.shape[-2:], mode='bilinear', align_corners=False))))
+        fuse4 = self.relu(self.norm256(self.smooth4(fm96 + F.interpolate(fuse8, size=fm96.shape[-2:], mode='bilinear', align_corners=False))))
         
-        score32 = self.score(fm768)
-        score16 = self.score(fuse16)
-        score8 = self.score(fuse8)
-        score4 = self.score(fuse4)
+        score32 = F.interpolate(self.score32(fm768), size=img_res, mode='bilinear', align_corners=False)
+        score16 = F.interpolate(self.score16(fuse16), size=img_res, mode='bilinear', align_corners=False)
+        score8 = F.interpolate(self.score8(fuse8), size=img_res, mode='bilinear', align_corners=False)
+        score4 = F.interpolate(self.score4(fuse4), size=img_res, mode='bilinear', align_corners=False)        
         
         # deep supervision
         return [

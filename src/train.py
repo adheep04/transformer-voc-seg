@@ -2,7 +2,7 @@ import torch
 from torch import nn
 from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
-from torch.optim import AdamW
+from lion_pytorch import Lion
 import torch.optim.lr_scheduler as schedule
 
 import numpy as np
@@ -10,7 +10,7 @@ from math import inf
 
 import time
 
-from model_new import SwinSeg
+from model_restore import SwinSeg
 from dataset_voc import VOC2012
 from config import config
 
@@ -39,8 +39,7 @@ def train(resume=False, resume_file_path=None):
     train_data = VOC2012(train=True)
     val_data = VOC2012(train=False)
     
-    # initialize dataloader
-    # batch size of 8
+    # initialize dataloaders
     train_loader = DataLoader(
         train_data,
         batch_size=1,
@@ -57,11 +56,10 @@ def train(resume=False, resume_file_path=None):
     )
     
     
-    loss_fn = FocalLoss(255)
+    loss_fn = nn.CrossEntropyLoss(ignore_index=255)
     
     log_step = 20
-    global_step = 0  #counter for tensorboard
-
+    global_step = 0  
     
     ''' use 2 x learning_rate for biases (like authors)'''
     
@@ -70,12 +68,11 @@ def train(resume=False, resume_file_path=None):
     best_loss = float(inf)
     best_acc = 0
     
-    # initialize optimizer with momentum (add accumulated past gradients to smoothen updates)
-    optimizer = AdamW(
-        lr=9e-6,
-        params=swinseg.parameters(), 
-        betas=(0.9, 0.89), 
-        weight_decay=1e-5
+    # initialize optimizer 
+    optimizer = Lion(
+        swinseg.parameters(),
+        lr=8e-6, 
+        weight_decay=3e-4
     )
     
     scheduler = schedule.CosineAnnealingWarmRestarts(optimizer, T_0=3, T_mult=2, eta_min=1e-6)
@@ -83,7 +80,6 @@ def train(resume=False, resume_file_path=None):
     ''' training loop '''
     
     swinseg.train()
-
 
     try: 
         for epoch in range(config.NUM_EPOCHS):
@@ -293,21 +289,6 @@ def pixel_acc(model_out, label):
    
     return accuracy.item()
 
-class FocalLoss(nn.Module):
-   def __init__(self, ignore_index=255, alpha=1.3, gamma=1.5):
-        super().__init__()
-        self.alpha = alpha
-        self.gamma = gamma
-        self.ignore_index = ignore_index
-        self.weights = torch.tensor([0.4333, 0.4435, 0.9347, 0.6421, 0.5557, 0.6101, 0.6139, 0.6364, 0.5840, 1.3820, 0.5881, 0.7733, 0.5708, 0.5645, 0.7100, 0.4622, 2.1731, 0.5434, 0.6334, 0.4606, 0.6014])
-        assert len(self.weights) == 21
-        
-   def forward(self, inputs, targets):
-       ce_loss = nn.functional.cross_entropy(inputs, targets, weight=self.weights, reduction='none', ignore_index=self.ignore_index)
-       pt = torch.exp(-ce_loss)
-       focal_loss = self.alpha * (1-pt)**self.gamma * ce_loss
-
-       return focal_loss.mean()
 
 if __name__ == '__main__':
     train()
