@@ -4,7 +4,7 @@ import numpy as np
 class Config:
     
     # training/validation run num/type
-    RUN = 'PASCAL_LION_BOUNDARY'
+    RUN = 'PASCAL_LION_LOSS2'
     
     # Paths
     CHECKPOINT_DIR = Path("checkpoints/")

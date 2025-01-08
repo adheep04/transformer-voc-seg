@@ -20,13 +20,9 @@ PALETTE=([0, 0, 0], [128, 0, 0], [0, 128, 0], [128, 128, 0],
 
 IDS=(0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20)
 
-data = Image.open(r'data\VOCtrainval_11-May-2012\VOCdevkit\VOC2012\JPEGImages\2007_000032.jpg')
-label = Image.open(r'data\VOCtrainval_11-May-2012\VOCdevkit\VOC2012\SegmentationClass\2007_000032.png')
-label.show()
-label_tensor = np.array(label)
-count = len(label_tensor[label_tensor == 0])
-print(np.unique(label_tensor), count)
 
 
-def _convert_label(self, label_tensor):
+data_dir = Path(r'data\VOCdevkit\VOC2012\JPEGImages')
+
+for img_path in data_dir.iterdir():
     pass

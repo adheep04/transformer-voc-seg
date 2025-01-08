@@ -1,7 +1,9 @@
 import torch
 from torch import nn
 from torch.utils.data import DataLoader
+import torch.nn.functional as F
 from torch.utils.tensorboard import SummaryWriter
+
 from lion_pytorch import Lion
 import torch.optim.lr_scheduler as schedule
 
@@ -56,7 +58,7 @@ def train(resume=False, resume_file_path=None):
     )
     
     
-    loss_fn = nn.CrossEntropyLoss(ignore_index=255)
+    loss_fn = CoolLoss()
     
     log_step = 20
     global_step = 0  
@@ -105,8 +107,8 @@ def train(resume=False, resume_file_path=None):
                     
                 # forward pass  
                 outputs = swinseg(data)
-                loss = sum([loss_fn(score, label) * weight for score, weight in outputs])
-                output = outputs[0][0]
+                loss = loss_fn(outputs, label)
+                output = outputs[0]
                     
                 # calculate gradients
                 loss.backward()      
@@ -281,13 +283,81 @@ def pixel_acc(model_out, label):
     pred = model_out.softmax(dim=1).argmax(dim=1).to(dtype=torch.uint8)
     assert pred.shape == label.shape
    
-    # Create mask excluding background (0) and ignore_index (255)
+    # create mask excluding background 
     mask = (label != 0) & (label != 255)
    
-    # Calculate accuracy only on masked pixels
+    # calculate accuracy only on masked pixels
     accuracy = (pred[mask] == label[mask]).float().mean()
    
     return accuracy.item()
+
+
+# not the actual name lol, based on this paper: 
+# https://pmc.ncbi.nlm.nih.gov/articles/PMC8180474/pdf/main.pdf
+# helps class imbalances better than focal or weighting apparently
+class CoolLoss(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.class_counts = {
+            1: 865,   # aeroplane 
+            2: 711,   # bicycle
+            3: 1119,  # bird
+            4: 850,   # boat 
+            5: 1259,  # bottle
+            6: 593,   # bus
+            7: 2017,  # car
+            8: 1217,  # cat
+            9: 2354,  # chair
+            10: 588,  # cow
+            11: 609,  # diningtable 
+            12: 1515, # dog
+            13: 710,  # horse
+            14: 713,  # motorbike
+            15: 8566, # person
+            16: 973,  # pottedplant
+            17: 813,  # sheep
+            18: 566,  # sofa
+            19: 628,  # train
+            20: 784   # tvmonitor
+        }
+        self.alpha = nn.Parameter(torch.randn(1))    # Feature redundancy parameter
+        self.betas = nn.Parameter(torch.randn(4))    # One β per stage for weighting RCE
+        self.class_freq = torch.tensor([self.class_counts[i] for i in range(1,21)]).requires_grad_(False)
+        
+    def compute_stage_loss(self, pred, target, beta):
+        # Calculate effective number weights
+        alpha = torch.sigmoid(self.alpha).to(device=pred.device)
+        beta = beta.to(pred.device)
+        freq = self.class_freq.to(device=pred.device)
+        weights = (1-alpha)/(1-alpha**freq).to(pred.device)
+        
+        # Reshape predictions and targets
+        pred = pred.permute(0, 2, 3, 1).reshape(-1, 21)  # (h*w, num_classes)
+        target = target.reshape(-1)  # (h*w)
+
+        # Handle ignore_index 
+        valid_mask = target != 255
+        pred = pred[valid_mask]
+        target = target[valid_mask]
+
+        if len(target) == 0:
+            return pred.sum() * 0
+
+        # Regular CE with effective number weights
+        log_probs = F.log_softmax(pred, dim=1)
+        ce_loss = -torch.mean(weights[target] * log_probs[range(len(target)), target])
+        
+        # Reverse CE for handling noisy labels
+        pred_probs = F.softmax(pred, dim=1)  # (N, 21)
+        target_onehot = F.one_hot(target, num_classes=21).float()  # (N, 21)
+        rce_loss = -torch.mean(weights[target].unsqueeze(1) * pred_probs * torch.log(target_onehot + 1e-7))
+
+        return ce_loss + torch.sigmoid(beta) * rce_loss
+
+    def forward(self, preds_list, target):
+        betas = self.betas.to(device=target.device)
+        return sum(self.compute_stage_loss(pred, target, beta) 
+                    for pred, beta in zip(preds_list, betas))
 
 
 if __name__ == '__main__':
