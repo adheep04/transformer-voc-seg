@@ -1,3 +1,5 @@
+an image segmentation model designed by me using the swin-v2-t transformer classifier as a backbone, a feature pyramid network, lion optimizer, and deep supervised training (using auxiliary layers for loss)
+
 ## current
 
 tried using boundary refinement module (sobel kernel) to
